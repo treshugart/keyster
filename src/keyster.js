@@ -9,8 +9,7 @@
 }(function() {
 
   var keyster
-    , sequenceTimeout
-    , sequenceTimeoutMs = 500
+    , timeout
     , selectors = {}
     , sequence = []
     , splitters = {
@@ -22,6 +21,10 @@
 
   function dispatch(e) {
     if (typeof selectors[keyster.scope] === 'undefined') {
+      return;
+    }
+
+    if (selectors[keyster.scope].length === 0) {
       return;
     }
 
@@ -42,17 +45,57 @@
       sequence.push([code]);
     }
 
-    for (var a = 0; a < selectors[keyster.scope].length; a++) {
-      for (var b = 0; b < selectors[keyster.scope][a].length; b++) {
-        for (var c = 0; c < selectors[keyster.scope][a][b].cmds.length; c++) {
-          for (var d = 0; d < sequence.length; d++) {
-            if (compare(selectors[keyster.scope][a][b].cmds, sequence[d])) {
-              if (selectors[keyster.scope][a][b].fn(e) === false) {
-                e.preventDefault();
-                e.stopPropagation();
-              }
+    var sequences = selectors[keyster.scope];
+
+    for (var a = 0; a < sequences.length; a++) {
+      var matches = 0
+        , total = 0
+        , combos = sequences[a].combos;
+
+      for (var b = 0; b < combos.length; b++) {
+        var combo = combos[b];
+
+        total += combo.length;
+
+        for (var c = 0; c < sequence.length; c++) {
+          var seq = sequence[c];
+
+          for (var d = 0; d < seq.length; d++) {
+            var seqKey = seq[d];
+
+            if (combo.indexOf(seqKey) !== -1) {
+              matches++;
             }
           }
+        }
+      }
+
+      if (matches === total && sequences[a].fn(e) === false) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+  }
+
+  function cleanup(e) {
+    timeout = setTimeout(function() {
+      var combo = currentSequenceCombo();
+
+      if (combo) {
+        combo.splice(combo.indexOf(keyster.which(e)), 1);
+      }
+    }, keyster.timeout);
+  }
+
+  function trigger(parsed) {
+    for (var a = 0; a < parsed.length; a++) {
+      for (var b = 0; b < parsed[a].combos.length; b++) {
+        for (var c = 0; c < parsed[a].combos[b].length; c++) {
+          triggerEvent('keydown', parsed[a].combos[b][c]);
+        }
+
+        for (var c = 0; c < parsed[a].combos[b].length; c++) {
+          triggerEvent('keyup', parsed[a].combos[b][c]);
         }
       }
     }
@@ -65,15 +108,18 @@
       }
     }
 
+    for (var a = 0; a < arr2.length; a++) {
+      if (arr1.indexOf(arr2[a]) === -1) {
+        return false;
+      }
+    }
+
     return true;
   }
 
   function parse(keys, scope, fn) {
-    var combos = keys.split(splitters.combo);
-
-    if (typeof selectors[scope] === 'undefined') {
-      selectors[scope] = [];
-    }
+    var parsed = []
+      , combos = keys.split(splitters.combo);
 
     for (var a = 0; a < combos.length; a++) {
       var combo = []
@@ -87,47 +133,95 @@
           seq.push(keyster.code(cmds[c]));
         }
 
-        combo.push({
-          cmds: seq,
-          fn: fn
-        });
+        combo.push(seq);
       }
 
-      selectors[scope].push(combo);
+      parsed.push({
+        combos: combo,
+        fn: fn
+      });
     }
+
+    return parsed;
   };
 
   function currentSequenceCombo() {
     return sequence[(sequence.length || 1) - 1];
   }
 
+  function triggerEvent(name, code) {
+    var names = keyster.map[code]
+      , e = {
+        bubbles: true,
+        cancelable: true,
+        currentTarget: document,
+        target: document,
+        timestamp: new Date().getTime(),
+        type: name,
 
-  document.addEventListener('keydown', dispatch);
-  document.addEventListener('keyup', function(e) {
-    sequenceTimeout = setTimeout(function() {
-      var combo = currentSequenceCombo();
+        altKey: names[0] === 'option',
+        char: names[0],
+        ctrlKey: names[0] === 'control',
+        key: code,
+        locale: '',
+        meta: names[0] === 'command',
+        repeat: false,
+        shiftKey: names[0] === 'shift',
 
-      if (combo) {
-        combo.splice(combo.indexOf(keyster.which(e)), 1);
-      }
-    }, sequenceTimeoutMs);
-  });
+        preventDefault: function(){},
+        stopPropagation: function(){}
+      };
+
+    if (name === 'keydown') {
+      return dispatch(e);
+    }
+
+    if (name === 'keyup') {
+      return cleanup(e);
+    }
+  }
+
+  function bindEvent(e, fn) {
+    if (document.addEventListener) {
+      document.addEventListener(e, fn, false);
+    } else {
+      document.attachEvent('on' + e, function() {
+        fn(window.event)
+      });
+    }
+  }
+
+
+  bindEvent('keydown', dispatch);
+  bindEvent('keyup', cleanup);
 
 
   keyster = function(keys, scope, fn) {
     if (arguments.length === 2) {
       fn = scope;
       scope = keyster.scope;
+    } else if (arguments.length === 1) {
+      scope = keyster.scope;
     }
 
-    parse(keys, scope, fn);
+    if (typeof selectors[scope] === 'undefined') {
+      selectors[scope] = [];
+    }
+
+    var parsed = parse(keys, scope, fn);
+
+    if (fn) {
+      [].push.apply(selectors[scope], parsed);
+    } else {
+      trigger(parsed);
+    }
 
     return keyster;
   };
 
   keyster.attr = 'data-scope';
-
   keyster.scope = 'all';
+  keyster.timeout = 500;
 
   keyster.map = {
     8: ['backspace', 'back'],
@@ -238,12 +332,18 @@
     }
   };
 
+  keyster.clean = function() {
+    selectors = {};
+    sequence = [];
+    return keyster;
+  };
+
   keyster.which = function(e) {
-    return e.which || e.keyCode;
+    return e.key || e.which || e.keyCode;
   };
 
   keyster.filter = function(e) {
-    var el = event.target || event.srcElement
+    var el = e.target || e.srcElement
       , isInput = ['INPUT', 'SELECT', 'TEXTAREA'].indexOf(el.tagName) > -1
       , oldScope = keyster.scope
       , newScope = el.getAttribute ? el.getAttribute(keyster.attr) : false;

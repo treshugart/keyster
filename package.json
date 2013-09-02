@@ -1,0 +1,7 @@
+{
+  "devDependencies": {
+    "grunt": "0.4",
+    "grunt-contrib": "0.4",
+    "grunt-ghoul": "0.2"
+  }
+}

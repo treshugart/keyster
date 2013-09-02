@@ -1,0 +1,25 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Keyster Tests</title>
+  <link rel="stylesheet" href="../bower_components/mocha/mocha.css">
+  <script src="../node_modules/grunt-ghoul/lib/ghoul.js"></script>
+  <script src="../bower_components/chai/chai.js"></script>
+  <script src="../bower_components/mocha/mocha.js"></script>
+  <script src="../src/keyster.js"></script>
+  <script>
+    chai.should();
+    mocha.setup('bdd');
+  </script>
+  <script src="tests.js"></script>
+</head>
+<body>
+  <div id="mocha"></div>
+  <script>
+    mocha.checkLeaks();
+    mocha.run(function() {
+      ghoul.emit('done', document.getElementById('mocha').innerHTML);
+    });
+  </script>
+</body>
+</html>
